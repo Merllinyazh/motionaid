@@ -103,27 +103,22 @@ import librosa
 import numpy as np
 from scipy.spatial.distance import cosine
 import torch
-# ---------------- LOAD WHISPER ----------------
-print("🔊 Loading Whisper model...")
-model = whisper.load_model("small")  # small = accurate + fast
+
+print("🔊 Loading Whisper Tiny model...")
+model = whisper.load_model("tiny")
 print("✅ Whisper model loaded")
 
 # ---------------- AUDIO EMBEDDINGS ----------------
 def extract_whisper_embedding(audio_path):
     audio = whisper.load_audio(audio_path)
     audio = whisper.pad_or_trim(audio)
-
     mel = whisper.log_mel_spectrogram(audio).to(model.device)
-
-    # Add batch dimension → shape becomes (1, 80, T)
-    mel = mel.unsqueeze(0)
+    mel = mel.unsqueeze(0)  # (1, 80, T)
 
     with torch.no_grad():
         encoded = model.encoder(mel)
 
-    # encoded shape: (1, T, D)
     embedding = encoded.mean(dim=1).squeeze(0).cpu().numpy()
-
     return embedding
 
 # ---------------- PITCH SIMILARITY ----------------
@@ -151,21 +146,17 @@ def fluency_score(audio_path, sr=16000):
     y, _ = librosa.load(audio_path, sr=sr)
     energy = librosa.feature.rms(y=y)[0]
     silence_ratio = np.sum(energy < 0.01) / len(energy)
-
     return max(0, 1 - silence_ratio)
 
-# ---------------- FINAL THERAPY ACCURACY ----------------
+# ---------------- FINAL ACCURACY ----------------
 def get_pronunciation_accuracy(user_audio, ref_audio):
-    # Whisper similarity
     emb_user = extract_whisper_embedding(user_audio)
     emb_ref = extract_whisper_embedding(ref_audio)
-    similarity = 1 - cosine(emb_user, emb_ref)
 
-    # Pitch & fluency
+    similarity = 1 - cosine(emb_user, emb_ref)
     pitch = pitch_similarity(user_audio, ref_audio)
     fluency = fluency_score(user_audio)
 
-    # Fusion (research-grade scoring)
     final_score = (
         0.5 * similarity +
         0.3 * pitch +

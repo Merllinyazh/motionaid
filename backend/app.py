@@ -12,20 +12,13 @@ app = Flask(__name__)
 CORS(app)
 
 # ---------- MongoDB ----------
-try:
-    client = MongoClient("mongodb://localhost:27017/")
-    db = client["motionaid"]
-    collection = db["speech_results"]
-    client.admin.command("ping")
-    print("✅ MongoDB connected successfully!")
-except Exception as e:
-    print("❌ MongoDB connection failed:", e)
-    sys.exit(1)
+client = MongoClient("mongodb://localhost:27017/")
+db = client["motionaid"]
+collection = db["speech_results"]
 
-# ---------- FFMPEG PATH ----------
+# ---------- FFMPEG ----------
 FFMPEG_PATH = r"C:\Users\MERLLIN YAZHINI\Desktop\ffmpeg-8.0.1-essentials_build\bin\ffmpeg.exe"
 
-# ---------- ANALYZE API ----------
 @app.route("/analyze", methods=["POST"])
 def analyze():
     level = request.form["level"]
@@ -37,26 +30,17 @@ def analyze():
 
     audio.save(raw_path)
 
-    subprocess.run(
-        [
-            FFMPEG_PATH,
-            "-y",
-            "-i", raw_path,
-            "-ar", "16000",
-            "-ac", "1",
-            wav_path
-        ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-        check=True
-    )
+    subprocess.run([
+        FFMPEG_PATH, "-y", "-i", raw_path,
+        "-ar", "16000", "-ac", "1", wav_path
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     ref_path = f"dataset/{level}/{text_id}_ref.wav"
 
     if not os.path.exists(ref_path):
         return jsonify({"error": "Reference audio not found"}), 404
 
-    accuracy, feedback = get_accuracy(wav_path, ref_path)
+    accuracy, feedback = get_pronunciation_accuracy(wav_path, ref_path)
 
     collection.insert_one({
         "level": level,
@@ -70,21 +54,11 @@ def analyze():
         "feedback": feedback
     })
 
-# ---------- 🔊 EXAMPLE AUDIO API ----------
-@app.route("/example-audio/<level>/<text_id>", methods=["GET"])
+@app.route("/example-audio/<level>/<text_id>")
 def example_audio(level, text_id):
     path = f"dataset/{level}/{text_id}_ref.wav"
+    return send_file(path, mimetype="audio/wav")
 
-    if not os.path.exists(path):
-        return jsonify({"error": "Audio not found"}), 404
-
-    return send_file(
-        path,
-        mimetype="audio/wav",
-        as_attachment=False
-    )
-
-# ---------- SERVER ----------
 if __name__ == "__main__":
     print("🌐 Backend running at http://localhost:5000")
     app.run(debug=True, port=5000)

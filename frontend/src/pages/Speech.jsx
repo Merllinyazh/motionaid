@@ -5,8 +5,6 @@ import bImg from "../assets/b.jpg";
 import iImg from "../assets/i.jpg";
 import aImg from "../assets/a.jpg";
 
-/* ---------------- PRACTICE DATA ---------------- */
-
 const beginnerLetters = [
   { id: "ba", text: "Ba" },
   { id: "ma", text: "Ma" },
@@ -33,53 +31,27 @@ const advancedSentences = [
 
 const levels = ["Beginner", "Intermediate", "Advanced"];
 
-/* ---------------- MIC ICON (SVG) ---------------- */
-
-function MicIcon({ active }) {
-  return (
-    <div
-      style={{
-        width: 56,
-        height: 56,
-        borderRadius: "50%",
-        background: active ? "#0ea5a4" : "#f1f5f9",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: active
-          ? "0 0 0 6px rgba(14,165,164,0.25)"
-          : "none",
-        margin: "0 auto 12px",
-      }}
-    >
-      <svg width="26" height="26" viewBox="0 0 24 24" fill={active ? "#fff" : "#334155"}>
-        <path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3z" />
-        <path d="M19 11a1 1 0 1 0-2 0 5 5 0 0 1-10 0 1 1 0 1 0-2 0 7 7 0 0 0 6 6.93V21a1 1 0 1 0 2 0v-3.07A7 7 0 0 0 19 11z" />
-      </svg>
-    </div>
-  );
-}
-
-/* ---------------- MAIN PAGE ---------------- */
-
 export default function Speech() {
   return (
-    <div style={styles.page}>
-      <div style={styles.topHeader}>
-        <div style={styles.topIcon}>🎤</div>
-        <h1 style={styles.topTitle}>Speech Therapy</h1>
+    <div className="min-h-screen bg-slate-50 px-6 py-16">
+      <div className="text-center mb-12">
+        <div className="w-14 h-14 bg-teal-500 rounded-xl flex items-center justify-center text-white text-2xl mx-auto mb-3">
+          🎤
+        </div>
+        <h1 className="text-4xl font-bold text-slate-800">Speech Therapy</h1>
+        
       </div>
 
-      <div style={styles.grid}>
-        {levels.map((level) => (
-          <SpeechCard key={level} level={level} />
-        ))}
-      </div>
+      <div className="grid grid-cols-3 gap-10 max-w-6xl mx-auto">
+
+  {levels.map((level) => (
+    <SpeechCard key={level} level={level} />
+  ))}
+</div>
+
     </div>
   );
 }
-
-/* ---------------- CARD ---------------- */
 
 function SpeechCard({ level }) {
   const [showDialog, setShowDialog] = useState(false);
@@ -89,6 +61,7 @@ function SpeechCard({ level }) {
   const [feedback, setFeedback] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
+  const [history, setHistory] = useState([]);
 
   const levelImage =
     level === "Beginner" ? bImg :
@@ -99,6 +72,11 @@ function SpeechCard({ level }) {
     level === "Beginner" ? 5 :
     level === "Intermediate" ? 10 : 15;
 
+  const avgAccuracy =
+    history.length > 0
+      ? Math.round(history.reduce((a, b) => a + b, 0) / history.length)
+      : 0;
+
   const openDialog = () => {
     let data =
       level === "Beginner" ? beginnerLetters :
@@ -106,7 +84,6 @@ function SpeechCard({ level }) {
       advancedSentences;
 
     const selected = data[Math.floor(Math.random() * data.length)];
-
     setPracticeText(selected.text);
     setTextId(selected.id);
     setAccuracy(null);
@@ -115,15 +92,13 @@ function SpeechCard({ level }) {
     setShowDialog(true);
   };
 
-  /* 🔊 PLAY EXAMPLE AUDIO */
   const playExample = () => {
     const audio = new Audio(
-      `/ref_audio/${level.toLowerCase()}/${textId}_ref.wav`
+      `http://localhost:5000/example-audio/${level.toLowerCase()}/${textId}`
     );
     audio.play();
   };
 
-  /* 🎙️ AUTO RECORD */
   const startRecording = async () => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     const recorder = new MediaRecorder(stream);
@@ -131,7 +106,6 @@ function SpeechCard({ level }) {
 
     recorder.ondataavailable = (e) => chunks.push(e.data);
     recorder.start();
-
     setIsRecording(true);
     setTimer(duration);
 
@@ -154,48 +128,85 @@ function SpeechCard({ level }) {
       formData.append("text_id", textId);
 
       const res = await axios.post("http://localhost:5000/analyze", formData);
+
       setAccuracy(res.data.accuracy);
       setFeedback(res.data.feedback);
+      setHistory((prev) => [...prev, res.data.accuracy]);
     };
   };
 
   return (
     <>
-      <div style={styles.card} onClick={openDialog}>
-        <img src={levelImage} alt={level} style={styles.cardImage} />
-        <h2 style={styles.level}>{level}</h2>
-        <p style={styles.cardHint}>Tap to practice</p>
+      <div className="bg-white rounded-2xl shadow-lg overflow-hidden h-[380px] flex flex-col">
+
+        {/* Image */}
+        <div className="h-56 w-full overflow-hidden cursor-pointer" onClick={openDialog}>
+          <img src={levelImage} className="h-full w-full object-cover" />
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 flex flex-col justify-center text-center px-4">
+          <h3 className="text-lg font-semibold text-teal-600">{level}</h3>
+          <p className="text-sm text-slate-500">Tap to practice</p>
+        </div>
+
+        {/* Aggregate Accuracy Bar */}
+        <div className="px-4 pb-4">
+          <div className="text-xs text-slate-500 mb-1">Overall Accuracy</div>
+          <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-teal-500 transition-all duration-500"
+              style={{ width: `${avgAccuracy}%` }}
+            />
+          </div>
+          <div className="text-xs text-teal-600 mt-1 font-semibold">
+            {avgAccuracy}%
+          </div>
+        </div>
       </div>
 
+      {/* Dialog (same as before, unchanged) */}
       {showDialog && (
-        <div style={styles.overlay}>
-          <div style={styles.dialog}>
-            <MicIcon active={isRecording} />
+        <div className="fixed inset-0 bg-black/50 backdrop-blur flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl p-8 w-full max-w-md text-center shadow-xl">
+            <div className={`text-5xl mb-4 ${isRecording && "animate-pulse text-teal-500"}`}>
+              🎤
+            </div>
 
-            <p style={styles.practiceLabel}>PRACTICE</p>
-            <h2 style={styles.practiceText}>{practiceText}</h2>
+            <p className="text-xs uppercase text-slate-400">Practice</p>
+            <h2 className="text-xl font-semibold mb-4">{practiceText}</h2>
 
-            <button style={styles.listenBtn} onClick={playExample}>
+            <button
+              onClick={playExample}
+              className="mb-3 px-4 py-2 rounded-lg border border-teal-400 text-teal-600 hover:bg-teal-50"
+            >
               🔊 Listen to Example
             </button>
 
             {!isRecording && accuracy === null && (
-              <button style={styles.startBtn} onClick={startRecording}>
-                🎙️ Start Speaking
+              <button
+                onClick={startRecording}
+                className="block w-full bg-teal-500 text-white py-2 rounded-lg hover:bg-teal-600"
+              >
+                Start Speaking
               </button>
             )}
 
             {isRecording && (
-              <p style={styles.timer}>Recording... {timer}s</p>
+              <p className="mt-3 text-red-500 font-bold">Recording... {timer}s</p>
             )}
 
             {accuracy !== null && (
-              <p style={styles.feedback}>
-                Accuracy: <strong>{accuracy}%</strong> • {feedback}
-              </p>
+              <div className="mt-4">
+                <div className="text-3xl font-bold text-teal-600">{accuracy}%</div>
+                <p className="text-slate-600">{feedback}</p>
+              </div>
             )}
 
-            <button style={styles.closeBtn} onClick={() => setShowDialog(false)}>
+            <button
+              onClick={() => setShowDialog(false)}
+              className="mt-5 text-sm text-slate-400 hover:text-slate-600"
+            >
               Close
             </button>
           </div>
@@ -204,101 +215,3 @@ function SpeechCard({ level }) {
     </>
   );
 }
-
-/* ---------------- STYLES ---------------- */
-
-const styles = {
-  page: {
-    padding: 30,
-    background: "#f4f6f8",
-    minHeight: "100vh",
-    textAlign: "center",
-    fontFamily: "Arial, sans-serif",
-  },
-  topHeader: { marginTop: 50, marginBottom: 70 },
-  topIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 10,
-    background: "#0ea5a4",
-    color: "#fff",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    fontSize: 18,
-    margin: "0 auto 8px",
-  },
-  topTitle: { fontSize: 38, fontWeight: "bold" },
-  grid: {
-    display: "grid",
-    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-    gap: 15,
-  },
-  card: {
-    background: "#fff",
-    padding: 16,
-    borderRadius: 16,
-    boxShadow: "0 5px 14px rgba(0,0,0,0.12)",
-    cursor: "pointer",
-  },
-  cardImage: {
-    width: "100%",
-    height: 300,
-    objectFit: "cover",
-    borderRadius: 12,
-    marginBottom: 8,
-  },
-  level: { fontSize: 22, color: "#0ea5a4" },
-  cardHint: { fontSize: 13, color: "#888" },
-  overlay: {
-    position: "fixed",
-    inset: 0,
-    background: "rgba(0,0,0,0.5)",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    zIndex: 1000,
-  },
-  dialog: {
-    background: "#fff",
-    width: 420,
-    padding: 28,
-    borderRadius: 18,
-    textAlign: "center",
-  },
-  practiceLabel: { fontSize: 12, color: "#888" },
-  practiceText: { fontSize: 20, margin: "10px 0 18px" },
-  listenBtn: {
-    background: "#eefefe",
-    border: "1px solid #0ea5a4",
-    color: "#0ea5a4",
-    padding: "8px 14px",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  startBtn: {
-    background: "#0ea5a4",
-    color: "#fff",
-    border: "none",
-    padding: "10px 18px",
-    borderRadius: 8,
-    cursor: "pointer",
-    fontSize: 15,
-  },
-  timer: {
-    marginTop: 12,
-    fontSize: 18,
-    color: "#dc2626",
-    fontWeight: "bold",
-  },
-  feedback: { marginTop: 12, fontSize: 14 },
-  closeBtn: {
-    marginTop: 14,
-    background: "transparent",
-    border: "none",
-    color: "#888",
-    cursor: "pointer",
-  },
-};
