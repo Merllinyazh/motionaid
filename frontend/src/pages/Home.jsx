@@ -53,7 +53,7 @@ const Home = () => {
       </div>
 
       <p className="text-gray-700 font-medium text-center">
-        Start your daily practice to build your recovery streak! 
+        Start your daily practice to build your recovery streak! 🔥
       </p>
     </main>
   );

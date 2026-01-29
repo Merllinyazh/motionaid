@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 
 import bImg from "../assets/b.jpg";
@@ -39,16 +39,13 @@ export default function Speech() {
           🎤
         </div>
         <h1 className="text-4xl font-bold text-slate-800">Speech Therapy</h1>
-        
       </div>
 
       <div className="grid grid-cols-3 gap-10 max-w-6xl mx-auto">
-
-  {levels.map((level) => (
-    <SpeechCard key={level} level={level} />
-  ))}
-</div>
-
+        {levels.map((level) => (
+          <SpeechCard key={level} level={level} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -61,7 +58,7 @@ function SpeechCard({ level }) {
   const [feedback, setFeedback] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [timer, setTimer] = useState(0);
-  const [history, setHistory] = useState([]);
+  const [avgAccuracy, setAvgAccuracy] = useState(0);
 
   const levelImage =
     level === "Beginner" ? bImg :
@@ -72,13 +69,15 @@ function SpeechCard({ level }) {
     level === "Beginner" ? 5 :
     level === "Intermediate" ? 10 : 15;
 
-  const avgAccuracy =
-    history.length > 0
-      ? Math.round(history.reduce((a, b) => a + b, 0) / history.length)
-      : 0;
+  // 🔁 Load persistent progress from MongoDB
+  useEffect(() => {
+    axios.get(`http://localhost:5000/progress/${level.toLowerCase()}`)
+      .then(res => setAvgAccuracy(res.data.avg))
+      .catch(() => setAvgAccuracy(0));
+  }, [level]);
 
   const openDialog = () => {
-    let data =
+    const data =
       level === "Beginner" ? beginnerLetters :
       level === "Intermediate" ? intermediateWords :
       advancedSentences;
@@ -128,29 +127,28 @@ function SpeechCard({ level }) {
       formData.append("text_id", textId);
 
       const res = await axios.post("http://localhost:5000/analyze", formData);
-
       setAccuracy(res.data.accuracy);
       setFeedback(res.data.feedback);
-      setHistory((prev) => [...prev, res.data.accuracy]);
+
+      // Refresh aggregated accuracy
+      const progress = await axios.get(`http://localhost:5000/progress/${level.toLowerCase()}`);
+      setAvgAccuracy(progress.data.avg);
     };
   };
 
   return (
     <>
       <div className="bg-white rounded-2xl shadow-lg overflow-hidden h-[380px] flex flex-col">
-
-        {/* Image */}
         <div className="h-56 w-full overflow-hidden cursor-pointer" onClick={openDialog}>
           <img src={levelImage} className="h-full w-full object-cover" />
         </div>
 
-        {/* Content */}
         <div className="flex-1 flex flex-col justify-center text-center px-4">
           <h3 className="text-lg font-semibold text-teal-600">{level}</h3>
           <p className="text-sm text-slate-500">Tap to practice</p>
         </div>
 
-        {/* Aggregate Accuracy Bar */}
+        {/* Aggregated Accuracy */}
         <div className="px-4 pb-4">
           <div className="text-xs text-slate-500 mb-1">Overall Accuracy</div>
           <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
@@ -165,7 +163,6 @@ function SpeechCard({ level }) {
         </div>
       </div>
 
-      {/* Dialog (same as before, unchanged) */}
       {showDialog && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur flex items-center justify-center z-50">
           <div className="bg-white rounded-2xl p-8 w-full max-w-md text-center shadow-xl">

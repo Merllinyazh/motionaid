@@ -12,10 +12,15 @@ app = Flask(__name__)
 CORS(app)
 
 # ---------- MongoDB ----------
-client = MongoClient("mongodb://localhost:27017/")
-db = client["motionaid"]
-collection = db["speech_results"]
-
+try:
+    client = MongoClient("mongodb://localhost:27017/", serverSelectionTimeoutMS=3000)
+    client.admin.command("ping")   # Real connection test
+    db = client["motionaid"]
+    collection = db["speech_results"]
+    print("✅ MongoDB connected successfully!")
+except Exception as e:
+    print("❌ MongoDB connection failed:", e)
+    sys.exit(1)
 # ---------- FFMPEG ----------
 FFMPEG_PATH = r"C:\Users\MERLLIN YAZHINI\Desktop\ffmpeg-8.0.1-essentials_build\bin\ffmpeg.exe"
 
@@ -54,10 +59,27 @@ def analyze():
         "feedback": feedback
     })
 
+
 @app.route("/example-audio/<level>/<text_id>")
 def example_audio(level, text_id):
     path = f"dataset/{level}/{text_id}_ref.wav"
     return send_file(path, mimetype="audio/wav")
+
+@app.route("/progress/<level>", methods=["GET"])
+def get_progress(level):
+    records = list(collection.find({"level": level}))
+
+    if not records:
+        return jsonify({"avg": 0})
+
+    accuracies = [r["accuracy"] for r in records]
+    avg = sum(accuracies) / len(accuracies)
+
+    return jsonify({
+        "avg": round(avg),
+        "count": len(accuracies)
+    })
+
 
 if __name__ == "__main__":
     print("🌐 Backend running at http://localhost:5000")
