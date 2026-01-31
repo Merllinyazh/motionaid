@@ -15,7 +15,7 @@ const Home = () => {
 
       {/* Feature Cards */}
       <div className="flex flex-col md:flex-row justify-center gap-8 mb-10">
-        <Link to="/motor-skills">
+        <Link to="/exzero">
           <FeatureCard
             icon={<FaHeartbeat />}
             title="Motor Skills"
@@ -24,7 +24,7 @@ const Home = () => {
           />
         </Link>
 
-        <Link to="/speech">
+        <Link to="/speechM">
             <FeatureCard
             icon={<FaMicrophoneAlt />}
             title="Speech Therapy"

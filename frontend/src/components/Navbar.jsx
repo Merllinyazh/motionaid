@@ -22,7 +22,7 @@ const Navbar = () => {
         <ul className="hidden md:flex gap-8 text-gray-600 font-medium">
           <li>
             <NavLink
-              to="/motor-skills"
+              to="/exzero"
               className={({ isActive }) =>
                 isActive
                   ? "flex items-center gap-2 bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg transition-all duration-200"
@@ -35,7 +35,7 @@ const Navbar = () => {
           </li>
           <li>
             <NavLink
-              to="/speech"
+              to="/speechM"
               className={({ isActive }) =>
                 isActive
                   ? "flex items-center gap-2 bg-blue-600 text-white font-semibold px-4 py-2 rounded-lg transition-all duration-200"

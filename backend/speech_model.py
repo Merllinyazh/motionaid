@@ -1,107 +1,130 @@
-import whisper
 import librosa
-import torch
 import numpy as np
-from scipy.spatial.distance import cosine, euclidean
+import whisper
+from scipy.spatial.distance import euclidean
 from fastdtw import fastdtw
+from scipy.signal import correlate
 
-# ---------------- LOAD WHISPER ----------------
-print("🔊 Loading Whisper Tiny model...")
-whisper_model = whisper.load_model("tiny")
-print("✅ Whisper model loaded")
-
+# ---------------- CONFIG ----------------
 SR = 16000
-ENERGY_THRESHOLD = 0.005
 
-# ---------------- VAD ----------------
-def load_audio_vad(path):
-    y, sr = librosa.load(path, sr=SR)
+print("🔊 Loading Whisper Tiny (CPU)...")
+whisper_model = whisper.load_model("tiny", device="cpu")
+print("✅ Whisper loaded")
 
+# ---------------- AUDIO UTILS ----------------
+def normalize(y):
+    y = y - np.mean(y)
+    return y / (np.max(np.abs(y)) + 1e-6)
+
+def has_speech(y):
     energy = librosa.feature.rms(y=y)[0]
-    speech_ratio = np.sum(energy > ENERGY_THRESHOLD) / len(energy)
-
-    print("Speech ratio:", speech_ratio)
-
-    if speech_ratio < 0.05:  # only reject if almost silence
-        return None, sr
-
-    return y, sr
-
-# ---------------- WHISPER EMBEDDING ----------------
-def whisper_embedding(audio_path):
-    audio = whisper.load_audio(audio_path)
-    audio = whisper.pad_or_trim(audio)
-    mel = whisper.log_mel_spectrogram(audio).to(whisper_model.device)
-    mel = mel.unsqueeze(0)
-
-    with torch.no_grad():
-        encoded = whisper_model.encoder(mel)
-
-    return encoded.mean(dim=1).squeeze(0).detach().cpu().numpy()
+    return np.percentile(energy, 75) > 0.002
 
 # ---------------- MFCC + DTW ----------------
-def mfcc_dtw_similarity(y1, y2, sr):
-    mfcc1 = librosa.feature.mfcc(y=y1, sr=sr, n_mfcc=13).T
-    mfcc2 = librosa.feature.mfcc(y=y2, sr=sr, n_mfcc=13).T
+def mfcc_similarity(a, b):
+    mfcc1 = librosa.feature.mfcc(y=a, sr=SR, n_mfcc=13)
+    mfcc2 = librosa.feature.mfcc(y=b, sr=SR, n_mfcc=13)
 
-    distance, _ = fastdtw(mfcc1, mfcc2, dist=euclidean)
-    norm = distance / (len(mfcc1) + len(mfcc2))
-    return np.exp(-norm)
+    mfcc1 = (mfcc1 - np.mean(mfcc1)) / (np.std(mfcc1) + 1e-6)
+    mfcc2 = (mfcc2 - np.mean(mfcc2)) / (np.std(mfcc2) + 1e-6)
+
+    dist, _ = fastdtw(mfcc1.T, mfcc2.T, dist=euclidean)
+    norm_dist = dist / max(mfcc1.shape[1], mfcc2.shape[1])
+
+    return np.exp(-norm_dist)
 
 # ---------------- PITCH ----------------
-def pitch_similarity(y1, y2, sr):
-    f1 = librosa.yin(y1, fmin=80, fmax=350, sr=sr)
-    f2 = librosa.yin(y2, fmin=80, fmax=350, sr=sr)
+def pitch_similarity(a, b):
+    f1 = librosa.yin(a, fmin=80, fmax=350, sr=SR)
+    f2 = librosa.yin(b, fmin=80, fmax=350, sr=SR)
 
-    f1, f2 = f1[np.isfinite(f1)], f2[np.isfinite(f2)]
-    if len(f1) < 10 or len(f2) < 10:
-        return 0.3
+    f1 = f1[np.isfinite(f1)]
+    f2 = f2[np.isfinite(f2)]
 
-    min_len = min(len(f1), len(f2))
-    corr = np.corrcoef(f1[:min_len], f2[:min_len])[0, 1]
-    return max(0, corr)
+    if len(f1) < 20 or len(f2) < 20:
+        return 0.7
 
-# ---------------- FLUENCY ----------------
-def fluency_score(y):
-    energy = librosa.feature.rms(y=y)[0]
-    silence_ratio = np.sum(energy < ENERGY_THRESHOLD) / len(energy)
-    return max(0, 1 - silence_ratio)
+    m = min(len(f1), len(f2))
+    corr = np.corrcoef(f1[:m], f2[:m])[0, 1]
+    return 0.7 if np.isnan(corr) else np.clip(corr, 0, 1)
 
-# ---------------- FINAL HYBRID ACCURACY ----------------
+# ---------------- ENVELOPE ----------------
+def envelope_similarity(a, b):
+    a = a / (np.linalg.norm(a) + 1e-6)
+    b = b / (np.linalg.norm(b) + 1e-6)
+    corr = correlate(a, b, mode="full")
+    return np.max(corr)
+
+# ---------------- FEEDBACK ----------------
+def feedback_from_score(score):
+    if score >= 0.85:
+        return "Excellent"
+    elif score >= 0.65:
+        return "Good"
+    else:
+        return "Needs Practice"
+
+# ---------------- ADVANCED ONLY ----------------
 def get_pronunciation_accuracy(user_audio, ref_audio):
-    y_user, sr = load_audio_vad(user_audio)
-    y_ref, _ = load_audio_vad(ref_audio)
+    y_user, _ = librosa.load(user_audio, sr=SR)
+    y_ref, _ = librosa.load(ref_audio, sr=SR)
 
-    if y_user is None:
+    y_user = normalize(y_user)
+    y_ref = normalize(y_ref)
+
+    # 🚨 HARD NO-SPEECH CHECK
+    if not has_speech(y_user):
+        print("\n==============================")
+        print("📚 LEVEL     : advanced")
+        print("🎧 USER SPOKE: (no speech)")
+        print("🎯 ACCURACY : 0")
+        print("💬 FEEDBACK : No speech detected")
+        print("==============================")
         return 0, "No speech detected"
 
-    # Whisper semantic similarity
-    emb_user = whisper_embedding(user_audio)
-    emb_ref = whisper_embedding(ref_audio)
-    whisper_sim = 1 - cosine(emb_user, emb_ref)
+    # ---------------- ACOUSTIC SIMILARITY ----------------
+    mfcc = mfcc_similarity(y_user, y_ref)
+    pitch = pitch_similarity(y_user, y_ref)
+    env = envelope_similarity(y_user, y_ref)
 
-    # MFCC articulation similarity
-    mfcc_sim = mfcc_dtw_similarity(y_user, y_ref, sr)
+    acoustic_sim = 0.6 * mfcc + 0.25 * pitch + 0.15 * env
 
-    # Pitch & Fluency
-    pitch_sim = pitch_similarity(y_user, y_ref, sr)
-    fluency = fluency_score(y_user)
+    # ---------------- WHISPER ----------------
+    ref_text = whisper_model.transcribe(
+        ref_audio, language="en", temperature=0.0
+    )["text"].strip().lower()
 
-    # Weighted fusion (therapy-grade)
-    final_score = (
-        0.4 * whisper_sim +
-        0.4 * mfcc_sim +
-        0.1 * pitch_sim +
-        0.1 * fluency
-    )
+    user_text = whisper_model.transcribe(
+        user_audio, language="en", temperature=0.0
+    )["text"].strip().lower()
 
-    accuracy = int(final_score * 100)
+    # 🚨 WHISPER EMPTY CHECK
+    if not user_text:
+        print("\n==============================")
+        print("📚 LEVEL     : advanced")
+        print("🎯 TARGET    :", ref_text)
+        print("🎧 USER SPOKE: (empty)")
+        print("🎯 ACCURACY : 0")
+        print("💬 FEEDBACK : No speech detected")
+        print("==============================")
+        return 0, "No speech detected"
 
-    if accuracy >= 85:
-        feedback = "Excellent"
-    elif accuracy >= 65:
-        feedback = "Good"
-    else:
-        feedback = "Needs Practice"
+    # ---------------- TEXT OVERLAP ----------------
+    ref_set = set(ref_text.split())
+    user_set = set(user_text.split())
+    overlap = len(ref_set & user_set) / max(len(ref_set), 1)
+
+    final_score = 0.6 * overlap + 0.4 * acoustic_sim
+    accuracy = int(np.clip(final_score * 100, 5, 100))
+    feedback = feedback_from_score(accuracy / 100)
+
+    print("\n==============================")
+    print("📚 LEVEL     : advanced")
+    print("🎯 TARGET    :", ref_text)
+    print("🎧 USER SPOKE:", user_text)
+    print("🎯 ACCURACY :", accuracy)
+    print("💬 FEEDBACK :", feedback)
+    print("==============================")
 
     return accuracy, feedback
